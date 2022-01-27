@@ -1,0 +1,748 @@
+<!doctype html>
+
+<meta charset = 'utf-8'>
+<title>draw_qr</title>
+
+<body>
+    Enter data: <input type = "text" id = "str" >
+    <br> <button onclick = "main()">Create Qr code</button> <br>
+
+    <canvas id = "canvas" width = "800" height = "600"></canvas>
+<script>
+
+let DATA = ""
+// M - уровень коррекции
+let VERSION = -1
+
+function from_dec_to_binary(n){
+    let binary = ""
+
+    while(n > 0){
+        binary = (n%2).toString() + binary
+        n = (n / 2) | 0
+    }
+
+    while( binary.length % 8 != 0 ) binary = "0" + binary
+    
+    return binary
+}
+
+function from_binary_to_dec(n){
+    let dec = 0
+
+    for( let i = 0; i < 8; i++ ){
+        dec = dec + (2**i * n.charAt(8-1-i).valueOf())
+    }
+
+    return dec
+}
+
+function get_version(number_of_bit){
+    // DATA + служебная
+    let maximum_amount_of_information = [128, 224, 352, 512, 688, 864, 992, 1232, 1456, 1728, 2032, 2320, 2672, 2920, 3320, 3624, 4056, 4504, 5016, 5352,
+        5712, 6256, 6880, 7312, 8000, 8496, 9024, 9544, 10136, 10984, 11640, 12328, 13048, 13800, 14496, 15312, 15936, 16816, 17728, 18672]
+
+    let version = -1
+    for( let i = 0; i < 40; i++ ){
+        if( maximum_amount_of_information[i] >= number_of_bit ){
+            version = i+1;
+            break
+        }
+    }
+
+    // проверяю подходит ли данная версия, если добавить служебную информацию
+    if( (4 + length_of_the_data_quantity_field(version) + number_of_bit) > maximum_amount_of_information[version-1] ) version++
+
+    return version
+
+}
+
+function length_of_the_data_quantity_field(test_version){
+    // длина числа в двоичной СС, равного количеству байт
+    if( test_version >= 1 && test_version <= 9 ) return 8
+    else return 16
+}
+
+function max_length_of_data_on_this_version(version){
+    let maximum_amount_of_information = [128, 224, 352, 512, 688, 864, 992, 1232, 1456, 1728, 2032, 2320, 2672, 2920, 3320, 3624, 4056, 4504, 5016, 5352,
+        5712, 6256, 6880, 7312, 8000, 8496, 9024, 9544, 10136, 10984, 11640, 12328, 13048, 13800, 14496, 15312, 15936, 16816, 17728, 18672]
+
+    return maximum_amount_of_information[version-1]
+}
+
+function get_generating_polynomial(bytes_in_block){
+    let g7  = [87, 229, 146, 149, 238, 102, 21]
+    let g10 = [251, 67, 46, 61, 118, 70, 64, 94, 32, 45]
+    let g13 = [74, 152, 176, 100, 86, 100, 106, 104, 130, 218, 206, 140, 78]
+    let g15 = [8, 183, 61, 91, 202, 37, 51, 58, 58, 237, 140, 124, 5, 99, 105]
+    let g16 = [120, 104, 107, 109, 102, 161, 76, 3, 91, 191, 147, 169, 182, 194, 225, 120]
+    let g17 = [43, 139, 206, 78, 43, 239, 123, 206, 214, 147, 24, 99, 150, 39, 243, 163, 136]
+    let g18 = [215, 234, 158, 94, 184, 97, 118, 170, 79, 187, 152, 148, 252, 179, 5, 98, 96, 153]
+    let g20 = [17, 60, 79, 50, 61, 163, 26, 187, 202, 180, 221, 225, 83, 239, 156, 164, 212, 212, 188, 190]
+    let g22 = [210, 171, 247, 242, 93, 230, 14, 109, 221, 53, 200, 74, 8, 172, 98, 80, 219, 134, 160, 105, 165, 231]
+    let g24 = [229, 121, 135, 48, 211, 117, 251, 126, 159, 180, 169, 152, 192, 226, 228, 218, 111, 0, 117, 232, 87, 96, 227, 21]
+    let g26 = [173, 125, 158, 2, 103, 182, 118, 17, 145, 201, 111, 28, 165, 53, 161, 21, 245, 142, 13, 102, 48, 227, 153, 145, 218, 70]
+    let g28 = [168, 223, 200, 104, 224, 234, 108, 180, 110, 190, 195, 147, 205, 27, 232, 201, 21, 43, 245, 87, 42, 195, 212, 119, 242, 37, 9, 123]
+    let g30 = [41, 173, 145, 152, 216, 31, 179, 182, 50, 48, 110, 86, 239, 96, 222, 125, 42, 173, 226, 193, 224, 130, 156, 37, 251, 216, 238, 40, 192, 180]
+
+    if( bytes_in_block == 7 ) return g7
+    else if( bytes_in_block == 10 ) return g10
+    else if( bytes_in_block == 13 ) return g13
+    else if( bytes_in_block == 15 ) return g15
+    else if( bytes_in_block == 16 ) return g16
+    else if( bytes_in_block == 17 ) return g17
+    else if( bytes_in_block == 18 ) return g18
+    else if( bytes_in_block == 20 ) return g20
+    else if( bytes_in_block == 22 ) return g22
+    else if( bytes_in_block == 24 ) return g24
+    else if( bytes_in_block == 26 ) return g26
+    else if( bytes_in_block == 28 ) return g28
+    else if( bytes_in_block == 30 ) return g30
+}
+
+function main(){
+    DATA = document.getElementById("str").value
+
+    DATA = byte_by_byte_encoding()
+    //console.log(DATA)
+    //console.log(DATA.length)
+    DATA = adding_service_information()
+    //console.log(DATA)
+    //console.log(DATA.length)
+    //console.log("VERSION: ", VERSION)
+    completion()
+    //console.log(DATA)
+    //console.log(DATA.length)
+
+    let blocks_DATA = division_into_blocks()   
+    if( blocks_DATA.length == 0) blocks_DATA.push(DATA)
+    //console.log(blocks_DATA)
+
+    let bytes_corrections_in_blocks = create_bytes_corrections(blocks_DATA)
+    //console.log(bytes_corrections_in_blocks)
+
+    DATA = unification(blocks_DATA, bytes_corrections_in_blocks)
+    console.log(DATA)
+    console.log("DATA length: ", DATA.length)
+    console.log("VERSION: ", VERSION)
+
+    draw()
+}
+
+function byte_by_byte_encoding(){
+    let binary_DATA = ""
+
+    for( let i = 0; i < DATA.length; i++ ){
+        binary_DATA += from_dec_to_binary(DATA.charCodeAt(i).valueOf())
+        //console.log(DATA.charAt(i), DATA.charCodeAt(i).valueOf(), from_dec_to_binary(DATA.charCodeAt(i).valueOf()))
+    }
+
+    return binary_DATA
+}
+
+function adding_service_information(){
+    VERSION = get_version(DATA.length)
+
+    let service_field = from_dec_to_binary(DATA.length/8)  // количество байт DATA в двоичной системе
+    while( service_field.length != length_of_the_data_quantity_field(VERSION) ) service_field = "0" + service_field
+
+    let all_binary_DATA = "0100" + service_field + DATA
+
+    return all_binary_DATA
+}
+
+function completion(){
+    while( DATA.length % 8 != 0 ) DATA += "0"
+
+    let i = 0
+    while( DATA.length != max_length_of_data_on_this_version(VERSION) ){
+        if( i == 0 ) { DATA = DATA + "11101100"; i = 1 }
+        else if( i == 1 ) { DATA = DATA + "00010001"; i = 0 }
+    }
+}
+
+function division_into_blocks(){
+    let count_of_blocks = [1, 1, 1, 2, 2, 4, 4,	4, 5, 5, 5,	8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35,
+                           37, 38, 40, 43, 45, 47, 49]
+
+    let blocks_DATA = []
+                           
+    if( count_of_blocks[VERSION-1] != 1 ){
+        let count_of_byte_in_block = ( DATA.length/8 / count_of_blocks[VERSION-1] ) | 0
+        let mod = DATA.length/8 % count_of_blocks[VERSION-1]
+
+        //console.log(count_of_byte_in_block, mod)
+
+        if( mod == 0 ){
+            let l = 0, r = count_of_byte_in_block*8
+            for( let i = 0; i < count_of_blocks[VERSION-1]; i++ ){
+                blocks_DATA.push(DATA.slice(l, r))
+                l = r; r += count_of_byte_in_block*8
+            }
+        }
+        else{
+            let l = 0, r = count_of_byte_in_block*8
+            let i = 0 
+            for( i = 0; i < count_of_blocks[VERSION-1]-mod; i++ ){
+                blocks_DATA.push(DATA.slice(l, r))
+                l = r; r += count_of_byte_in_block*8
+            }
+            r += 8
+            count_of_byte_in_block++
+            for( i; i < count_of_blocks[VERSION-1]; i++ ){
+                blocks_DATA.push(DATA.slice(l, r))
+                l = r; r += count_of_byte_in_block*8
+            }
+        }
+    }
+    
+    return blocks_DATA
+}
+
+function  create_bytes_corrections(blocks_DATA){
+    let Gaul_field = [1,2, 4, 8, 16, 32, 64, 128, 29, 58, 116, 232, 205, 135, 19, 38, 76, 152, 45, 90, 180, 117, 234, 201, 143, 3, 6, 12, 24, 48, 96, 192,
+                      157, 39, 78, 156, 37, 74, 148,	53,	106, 212, 181, 119, 238, 193, 159, 35, 70, 140, 5, 10, 20, 40, 80, 160,	93,	186, 105, 210, 185, 111, 222, 161,
+                      95, 190, 97, 194, 153, 47, 94, 188, 101, 202, 137, 15, 30, 60, 120, 240, 253, 231, 211, 187, 107, 214, 177, 127, 254, 225,	223, 163, 91, 182, 113,
+                      226, 217, 175, 67, 134, 17, 34, 68, 136, 13, 26, 52, 104, 208,	189, 103, 206, 129, 31, 62, 124, 248, 237, 199, 147, 59, 118, 236, 197, 151, 51, 102,
+                      204, 133, 23, 46, 92, 184, 109, 218, 169, 79, 158, 33, 66, 132, 21, 42, 84, 168, 77, 154, 41, 82, 164, 85, 170, 73, 146, 57, 114, 228, 213, 183, 115,
+                      230, 209, 191, 99, 198, 145, 63, 126, 252, 229, 215, 179, 123, 246, 241, 255, 227, 219, 171, 75, 150, 49, 98, 196,	149, 55, 110, 220, 165, 87,	
+                      174, 65, 130, 25, 50, 100, 200, 141, 7, 14, 28, 56, 112, 224, 221, 167, 83, 166, 81, 162, 89, 178, 121, 242, 249, 239, 195, 155, 43, 86, 172, 69,
+                      138, 9, 18, 36, 72, 144, 61, 122, 244, 245, 247, 243, 251, 235, 203, 139, 11, 22, 44, 88, 176,	125, 250, 233, 207,	131, 27, 54, 108, 216, 173,
+                      71, 142, 1
+                     ]
+
+    let inverse_Gaul_field = [-1, 0, 1,	25, 2, 50, 26, 198,	3, 223, 51, 238, 27, 104, 199, 75, 4, 100, 224, 14,	52,	141, 239, 129, 28, 193, 105, 248, 200, 8, 76, 113,
+                               5,	138, 101, 47, 225, 36, 15, 33, 53, 147,	142, 218, 240, 18, 130, 69, 29,	181, 194, 125, 106, 39, 249, 185, 201, 154,	9, 120,	77,	
+                               228, 114, 166, 6, 191,	139, 98, 102, 221, 48, 253,	226, 152, 37, 179, 16, 145,	34,	136, 54, 208, 148, 206,	143, 150, 219, 	
+                               189, 241, 210, 19,	92,	131, 56, 70, 64, 30, 66, 182, 163, 195,	72,	126, 110, 107, 58, 40, 84, 250, 133, 186, 61, 202, 94, 155,	
+                               159, 10, 21, 121, 43, 78, 212, 229, 172, 115, 243, 167, 87, 7, 112, 192, 247, 140, 128, 99, 13, 103, 74, 222, 237,	49,	197, 254, 24,
+                               227, 165, 153, 119, 38, 184, 180, 124, 17, 68, 146, 217, 35, 32, 137, 46, 55, 63, 209, 91, 149, 188, 207, 205, 144, 135, 151, 178, 220,
+                               252, 190, 97, 242, 86, 211, 171, 20, 42, 93, 158, 132, 60, 57, 83, 71, 109, 65, 162, 31, 45, 67, 216, 183, 123, 164, 118, 196, 23, 73, 236,
+                               127, 12, 111, 246, 108, 161, 59, 82, 41, 157, 85, 170, 251, 96, 134, 177, 187, 204, 62, 90, 203, 89, 95, 176, 156, 169, 160, 81, 11, 245, 22,	
+                               235, 122, 117, 44, 215, 79, 174, 213, 233,	230, 231, 173, 232,	116, 214, 244, 234,	168, 80, 88, 175
+                             ]
+
+    
+
+    let count_of_byte_in_block = [ 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28,
+                                   28, 28, 28, 28, 28, 28, 28, 28, 28 ]
+
+    let bytes_in_block = count_of_byte_in_block[VERSION-1]
+    let generating_polynomial = get_generating_polynomial(bytes_in_block)
+
+    let bytes_corrections_on_blocks = []
+
+
+    for( let k = 0; k < blocks_DATA.length; k++ ){
+        let temp = []
+        let n = Math.max( blocks_DATA[k].length/8, bytes_in_block ) // temp.length
+
+        let l = 0, r = 8
+        for( let i = 0; i < blocks_DATA[k].length/8; i++ ){
+            let byte = blocks_DATA[k].slice(l, r)
+            temp.push(from_binary_to_dec(byte))
+            l = r; r = r + 8
+        }
+
+        while( temp.length != n ) temp.push(0)        
+
+        let A, B, C
+        for( let j = 0; j < blocks_DATA[k].length/8; j++ ){
+            A = temp[0]
+
+            temp[0] = 0
+            for( let q = 0; q < n-1; q++ ){
+                let b = temp[q]
+                temp[q] = temp[q+1]
+                temp[q+1] = b
+            } 
+
+            if( A == 0 ) continue
+
+            B = inverse_Gaul_field[A]
+
+            for( let i = 0; i < bytes_in_block; i++ ){
+                C = (get_generating_polynomial(bytes_in_block)[i]+B)%255
+                temp[i] = temp[i]^Gaul_field[C]
+            }
+
+        }
+
+        let bar = []
+        for( let i = 0; i < bytes_in_block; i++ ) bar.push(temp[[i]])
+
+        bytes_corrections_on_blocks.push(bar)
+
+    }
+
+    return bytes_corrections_on_blocks
+
+}
+
+function unification(blocks_DATA, bytes_corrections_in_blocks){
+    let temp = ""
+    let l = 0, r = 8;
+    for(let i = 0; i < blocks_DATA[blocks_DATA.length-1].length/8; i++){
+        for( let j = 0; j < blocks_DATA.length; j++ ){
+            if( r > blocks_DATA[j].length ) continue
+            temp = temp + blocks_DATA[j].slice(l, r)
+        } 
+        l = r, r = r + 8;
+    }
+
+    let bar = ""
+    for( let i = 0; i < bytes_corrections_in_blocks[0].length; i++ ){
+        for( let j = 0; j < bytes_corrections_in_blocks.length; j++ ){
+            bar  = bar + from_dec_to_binary(bytes_corrections_in_blocks[j][i])
+        }
+    }
+
+    return temp+bar
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function get_location_of_alignment_patterns(version){
+    let location = [ [-1], [18], [22], [26], [30], [34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50], [6, 30, 54], [6, 32, 58], [6, 34, 62], [6, 26, 46, 66],
+                     [6, 26, 48, 70], [6, 26, 50, 74], [6, 30, 54, 78], [6, 30, 56, 82], [6, 30, 58, 86], [6, 34, 62, 90], [6, 28, 50, 72, 94], [6, 26, 50, 74, 98],
+                     [6, 30, 54, 78, 102], [6, 28, 54, 80, 106], [6, 32, 58, 84, 110], [6, 30, 58, 86, 114], [6, 34, 62, 90, 118], [6, 26, 50, 74, 98, 122], 
+                     [6, 30, 54, 78, 102, 126], [6, 26, 52, 78, 104, 130], [6, 30, 56, 82, 108, 134], [6, 34, 60, 86, 112, 138], [6, 30, 58, 86, 114, 142],
+                     [6, 34, 62, 90, 118, 146], [6, 30, 54, 78, 102, 126, 150], [6, 24, 50, 76, 102, 128, 154], [6, 28, 54, 80, 106, 132, 158],
+                     [6, 32, 58, 84, 110, 136, 162], [6, 26, 54, 82, 110, 138, 166], [6, 30, 58, 86, 114, 142, 170]
+                    ]
+
+    return location[version-1]
+}
+
+function get_code_version(version){
+    // 3 по 6
+    if( version ==  7 ) return "000010011110100110"
+    if( version ==  8 ) return "010001011100111000" 
+    if( version ==  9 ) return "110111011000000100"
+    if( version == 10 ) return "101001111110000000" 
+    if( version == 11 ) return "001111111010111100"
+    if( version == 12 ) return "001101100100011010"
+    if( version == 13 ) return "101011100000100110"
+    if( version == 14 ) return "110101000110100010"
+    if( version == 15 ) return "010011000010011110"
+    if( version == 16 ) return "011100010001011100"
+    if( version == 17 ) return "111010010101100000"
+    if( version == 18 ) return "100100110011100100"
+    if( version == 19 ) return "000010110111011000"
+    if( version == 20 ) return "000000101001111110"
+    if( version == 21 ) return "100110101101000010"
+    if( version == 22 ) return "111000001011000110"
+    if( version == 23 ) return "011110001111111010"
+    if( version == 24 ) return "001101001101100100"
+    if( version == 25 ) return "101011001001011000"
+    if( version == 26 ) return "110101101111011100"
+    if( version == 27 ) return "010011101011100000"
+    if( version == 28 ) return "010001110101000110"
+    if( version == 29 ) return "110111110001111010"
+    if( version == 30 ) return "101001010111111110"
+    if( version == 31 ) return "001111010011000010"
+    if( version == 32 ) return "101000011000101101"
+    if( version == 33 ) return "001110011100010001"
+    if( version == 34 ) return "010000111010010101"
+    if( version == 35 ) return "110110111110101001"
+    if( version == 36 ) return "110100100000001111"
+    if( version == 37 ) return "010010100100110011"
+    if( version == 38 ) return "001100000010110111"
+    if( version == 39 ) return "101010000110001011"
+    if( version == 40 ) return "111001000100010101"
+
+}
+
+function busy_or_not_busy(busy_modules, x, y){
+    for( let i = 0; i < busy_modules.length; i++ ){
+        if( busy_modules[i][0] == x && busy_modules[i][1] == y ) return 1
+    }
+
+    return -1
+}
+
+function draw(){
+    let canvas = document.getElementById("canvas");
+    let ctx = canvas.getContext("2d");
+    ctx.fillStyle = "black";
+
+    let busy_modules = []
+
+    let SIZE = 0
+    if( VERSION == 1 ) SIZE = 21
+    else SIZE = get_location_of_alignment_patterns(VERSION)[get_location_of_alignment_patterns(VERSION).length-1] + 7
+    console.log("SIZE: ", SIZE)
+    draw_search_patterns(SIZE, ctx)
+    if( VERSION > 1 ) draw_alignment_patterns(ctx, busy_modules)
+    draw_sync_bands(SIZE, ctx)
+    if( VERSION > 6 ) draw_version_code(SIZE, ctx, busy_modules)
+    draw_mask_and_correction_level_code(SIZE, ctx)
+    draw_DATA(SIZE, ctx, busy_modules)
+
+}
+
+function draw_search_patterns(SIZE, ctx){
+    // учитываем отступы!!!
+    //верхний левый
+    for( let i = 40; i < 110; i = i + 10 ){
+        ctx.fillRect(40, i, 10, 10)
+        ctx.fillRect(i, 40, 10, 10)
+    } 
+    for( let i = 100; i > 30; i = i - 10 ){
+        ctx.fillRect(100, i, 10, 10)
+        ctx.fillRect(i, 100, 10, 10)
+    }
+    ctx.fillRect(60, 60, 30, 30)
+
+    // верхний правый
+    for( let i = 30 + SIZE*10; i > 30+SIZE*10-70; i = i - 10 ){
+        ctx.fillRect(i, 40, 10, 10)
+        ctx.fillRect(i, 100, 10, 10)
+    }
+    for( let i = 40; i < 110; i = i + 10 ){
+        ctx.fillRect(30+SIZE*10-60, i, 10, 10)
+        ctx.fillRect(30+SIZE*10, i, 10, 10)
+    }
+    ctx.fillRect(30+SIZE*10-40, 60, 30, 30)
+
+    // нижний левый
+    for( let i = 30 + SIZE*10; i > 30+SIZE*10-70; i = i - 10 ){
+        ctx.fillRect(40, i, 10, 10)
+        ctx.fillRect(100, i, 10, 10)
+    }
+    for( let i = 40; i < 110; i = i + 10 ){
+        ctx.fillRect(i, 30+SIZE*10, 10, 10)
+        ctx.fillRect(i, 30+SIZE*10-60, 10, 10)
+    }
+    ctx.fillRect(60, 30+SIZE*10-40, 30, 30)
+
+}
+
+function draw_alignment_patterns(ctx, busy_modules){
+    let loc = get_location_of_alignment_patterns(VERSION)
+
+    for( let i = 0; i < loc.length; i++ ){
+        for( let j = 0; j < loc.length; j++ ){
+            if( VERSION > 6 ){
+                if( i == 0 && j == 0 ) continue
+                if( i == 0 && j == loc.length-1 ) continue
+                if( i == loc.length-1 && j == 0 ) continue
+            }
+            ctx.fillRect(loc[i]*10+40, loc[j]*10+40, 10, 10)
+
+            busy_modules.push( [loc[i]*10+40, loc[j]*10+40] )
+            busy_modules.push( [loc[i]*10+30, loc[j]*10+30] )
+            busy_modules.push( [loc[i]*10+40, loc[j]*10+30] )
+            busy_modules.push( [loc[i]*10+50, loc[j]*10+30] )
+            busy_modules.push( [loc[i]*10+30, loc[j]*10+40] )
+            busy_modules.push( [loc[i]*10+50, loc[j]*10+40] )
+            busy_modules.push( [loc[i]*10+30, loc[j]*10+50] )
+            busy_modules.push( [loc[i]*10+40, loc[j]*10+50] )
+            busy_modules.push( [loc[i]*10+50, loc[j]*10+50] )
+            
+            for( let k = loc[i]*10+20; k < loc[i]*10+70; k = k + 10 ){
+                ctx.fillRect(k, loc[j]*10+20, 10, 10)
+                ctx.fillRect(k, loc[j]*10+60, 10, 10)
+
+                busy_modules.push( [k, loc[j]*10+20] )
+                busy_modules.push( [k, loc[j]*10+60] )
+            }
+            for( let k = loc[j]*10+20; k < loc[j]*10+70; k = k + 10 ){
+                ctx.fillRect(loc[i]*10+20, k, 10, 10)
+                ctx.fillRect(loc[i]*10+60, k, 10, 10)
+
+                busy_modules.push( [loc[i]*10+20, k] )
+                busy_modules.push( [loc[i]*10+60, k] ) 
+            }
+        }
+    }
+}
+
+function draw_sync_bands(SIZE, ctx){
+    for( let i = 100; i < SIZE*10-20; i = i + 10 ){
+        if( i/10 % 2 == 0 ) {
+            ctx.fillRect(100, i, 10, 10)
+            ctx.fillRect(i, 100, 10, 10)
+        }
+    }
+}
+
+function draw_version_code(SIZE, ctx, busy_modules){
+    let code = get_code_version(VERSION)
+
+    let l = 0, r = 6;
+    for( let i = 0; i < 3; i++ ){
+        let k = 40
+        let temp = code.slice(l, r)
+        for( let j = 0; j < 6; j++ ){
+            
+            busy_modules.push( [k, SIZE*10-70+i*10] )
+            busy_modules.push( [SIZE*10-70+i*10, k] )
+
+            if( temp[j] == '1' ) {
+                ctx.fillRect(k, SIZE*10-70+i*10, 10, 10)
+                ctx.fillRect(SIZE*10-70+i*10, k, 10, 10)
+            }
+            k = k + 10
+        }
+        l = r, r = r + 6
+    }
+}
+
+function draw_mask_and_correction_level_code(SIZE, ctx){
+    let code = "101010000010010" // ( M 0 )
+
+    // возле левого верхнего
+    let j = 0
+    for( let i = 40; i < 130; i = i + 10 ){
+        if( i == 100 ) continue
+
+       if( code[j] == '1' ) ctx.fillRect(i, 120, 10, 10)
+       j++
+    }
+    for( let i = 110; i > 40; i = i - 10 ){
+        if( i == 100 ) continue
+
+        if( code[j] == '1' ) ctx.fillRect(120, i, 10, 10)
+        j++
+    }
+    
+    // возле левого нижнего
+    j = 0
+    for( let i = SIZE*10+30; i > SIZE*10-40; i = i - 10 ){
+        if( code[j] == '1' ) ctx.fillRect(120, i, 10, 10)
+        j++
+    } 
+    ctx.fillRect(120, SIZE*10-40, 10, 10)
+
+    // возле верхнего правого
+    for( let i = SIZE*10-40; i < SIZE*10+40; i = i + 10 ){
+        if( code[j] == '1' ) ctx.fillRect(i, 120, 10, 10)
+        j++
+    }
+    
+}
+
+function draw_DATA(SIZE, ctx, busy_modules){
+    // количество свобоных модулей
+    let count_free_modules = SIZE*SIZE - 3*7*7 - 3*15;
+    if( VERSION > 1 ) count_free_modules = count_free_modules - 25*get_location_of_alignment_patterns(VERSION).length
+    count_free_modules = count_free_modules - 2*(SIZE-14)
+    if( VERSION > 6 ) count_free_modules = count_free_modules - 36
+    count_free_modules = count_free_modules - 16
+
+    console.log(count_free_modules)
+    while( DATA.length != count_free_modules ) DATA += "0"
+
+
+    let j = 0
+
+    
+    let max_x = SIZE*10+30, max_y = SIZE*10+30;
+    // первые 4
+    for( let q = 0; q < 2; q++ ){
+        for( let i = max_y; i > 120; i = i - 10 ){
+            if( busy_or_not_busy(busy_modules, max_x - 40*q, i) == -1 ){
+                if( ( (max_x - 40*q)/10 + i/10)% 2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(max_x - 40*q, i, 10, 10)
+                }
+                else if( DATA[j] == '1' ) ctx.fillRect(max_x - 40*q, i, 10, 10)
+
+                j++
+            }        
+            
+            if( busy_or_not_busy(busy_modules, max_x-10 - 40*q, i) == -1 ){
+                if( ((max_x-10 - 40*q)/10 + i/10)%2 == 0 ) {    
+                    if( DATA[j] == '0' ) ctx.fillRect(max_x-10 - 40*q, i, 10, 10)
+                } 
+                else if( DATA[j] == '1' ) ctx.fillRect(max_x-10 - 40*q, i, 10, 10)
+
+                j++
+            }            
+        }
+        for( let i = 130; i < max_y+10; i = i + 10 ){
+            if(  busy_or_not_busy(busy_modules, max_x-20 - 40*q, i) == -1 ){
+                if( ( (max_x-20 - 40*q)/10 + i/10 )%2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(max_x-20 - 40*q, i, 10, 10)
+                } 
+                else if( DATA[j] == '1' ) ctx.fillRect(max_x-20 - 40*q, i, 10, 10)
+
+                j++
+            }        
+            
+            if( busy_or_not_busy(busy_modules, max_x-30 - 40*q, i) == -1 ){
+                if( ( (max_x-30 - 40*q)/10 + i/10 )%2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(max_x-30 - 40*q, i, 10, 10)
+                }
+                else if( DATA[j] == '1' ) ctx.fillRect(max_x-30 - 40*q, i, 10, 10)
+
+                j++
+            }
+        }
+    }
+
+    
+    let x = max_x-30 - 50;
+
+    if( VERSION > 6 ){
+        // до кода версии
+        
+        for( let i = SIZE*10+30; i > 100; i = i - 10 ){
+            if( busy_or_not_busy(busy_modules, x, i) == -1 ){
+                if( (x/10+i/10)%2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(x, i, 10, 10)
+                } 
+                else if( DATA[j] == '1' ) ctx.fillRect(x, i, 10, 10)
+
+                j++
+            }
+        
+            if( busy_or_not_busy(busy_modules, x-10, i) == -1 ){
+                if( ((x-10)/10 + i/10) %2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(x-10, i, 10, 10)
+                }  
+                else if( DATA[j] == '1' ) ctx.fillRect(x-10, i, 10, 10)
+                
+                j++
+            }
+        }
+
+        x = x - 20
+
+        for( let i = 40; i < SIZE*10+40; i = i + 10 ){
+            if( busy_or_not_busy(busy_modules, x, i) == -1 && i != 100){
+                if( (x/10+i/10)%2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(x, i, 10, 10)
+                } 
+                else if( DATA[j] == '1' ) ctx.fillRect(x, i, 10, 10)
+
+                j++
+            }
+        
+            if( busy_or_not_busy(busy_modules, x-10, i) == -1 && i != 100){
+                if( ((x-10)/10+i/10)%2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(x-10, i, 10, 10)
+                } 
+                else if( DATA[j] == '1' ) ctx.fillRect(x-10, i, 10, 10)
+
+                j++
+            }
+        }
+
+        x = x - 20
+    }
+
+    let count_big_columns
+    if( VERSION > 6 ) count_big_columns = (SIZE-17-4)/2
+    else count_big_columns = (SIZE-17)/2
+
+   
+    let up_or_dawn = 1  // 1 - вверх; 0 - вниз
+    let here, there, r; 
+    for( let q = 0; q < count_big_columns; q++ ){
+        if( up_or_dawn == 1 ){
+            here = SIZE*10 + 30
+            there = 30
+            r = -10
+        }
+        else {
+            here = 40
+            there = SIZE*10 + 40
+            r = 10
+        }
+
+        for( let i = here; i != there; i = i + r ){
+            if( busy_or_not_busy(busy_modules, x, i) == -1 && i != 100 ){
+                if( (x/10+i/10)%2 == 0 ) {
+                    if( DATA[j] == '0' ) ctx.fillRect(x, i, 10, 10)
+                }
+                else if( DATA[j] == '1' ) ctx.fillRect(x, i, 10, 10)
+
+                j++
+            }
+            
+            if( busy_or_not_busy(busy_modules, x-10, i) == -1 && i != 100 ){
+                if( ((x-10)/10 + i/10)%2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(x-10, i, 10, 10) 
+                }
+                else if( DATA[j] == '1' ) ctx.fillRect(x-10, i, 10, 10)
+
+                j++
+            }
+        }
+
+        x = x - 20
+
+        if( up_or_dawn == 1 ) up_or_dawn = 0
+        else up_or_dawn = 1
+    }
+    
+    // 1
+    for( let i = SIZE*10-50; i > 120; i = i - 10 ){
+        if( busy_or_not_busy(busy_modules, x, i) == -1 ){
+            if( (x/10+i/10)%2 == 0 ){
+                if( DATA[j] == '0' ) ctx.fillRect(x, i, 10, 10)
+            } 
+            else if( DATA[j] == '1' ) ctx.fillRect(x, i, 10, 10)
+
+            j++
+        }
+               
+        if( busy_or_not_busy(busy_modules, x-10, i) == -1 ){
+            if( ((x-10)/10 + i/10)%2 == 0 ){
+                if( DATA[j] == '0' ) ctx.fillRect(x-10, i, 10, 10)
+            } 
+            else if( DATA[j] == '1' ) ctx.fillRect(x-10, i, 10, 10)
+
+            j++
+        }
+    }
+
+    //3
+
+    x = x - 30
+
+    up_or_dawn = 0
+    here = 0, there = 0, r = 0
+    for( let q = 0; q < 3; q++ ){
+        if( up_or_dawn == 0 ){
+            here = 130
+            there = SIZE*10-40
+            r = 10
+        }
+        else{
+            here = SIZE*10-50
+            there = 120
+            r = -10
+        }
+        for( let i = here; i != there; i = i + r ){
+            if( busy_or_not_busy(busy_modules, x, i) == -1 ){
+                if( (x/10+i/10)%2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(x, i, 10, 10)
+                } 
+                else if( DATA[j] == '1' ) ctx.fillRect(x, i, 10, 10)
+
+                j++
+            }
+            
+            if( busy_or_not_busy(busy_modules, x-10, i) == -1 ){
+                if( ((x-10)/10 + i/10)%2 == 0 ){
+                    if( DATA[j] == '0' ) ctx.fillRect(x-10, i, 10, 10)
+                } 
+                else if( DATA[j] == '1' ) ctx.fillRect(x-10, i, 10, 10)
+
+                j++
+            }
+        }
+
+        x = x - 20
+
+        if( up_or_dawn == 1 ) up_or_dawn = 0
+        else up_or_dawn = 1
+    }
+
+
+}
+
+</script>
+</body>
